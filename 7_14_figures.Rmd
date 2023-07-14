@@ -1,0 +1,228 @@
+---
+title: "7_13"
+author: "Rachel Slimovitch"
+date: "2023-07-13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, tidy.opts=list(width.cutoff=60),tidy=TRUE)
+library(knitr)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tableone)
+set.seed(123)
+```
+
+
+Open data:
+```{r}
+merged_data<- read.csv("/Users/rachelslimovitch/Documents/22-23/Brown/Thesis and APE/Code_6_26/7_13_COVID_df2.csv")
+
+merged_data <- merged_data %>%
+  rename(Surveillance=surveillance) 
+  
+```
+
+**Note:**
+- covid_data is our output and is dim 1080x71 (3 runs for each unique parameter combination)
+- each row represents a single iteration of the simulation
+- column "class" is # classroom transmission cases
+- had to decrease # options for mitigation in order to get it to run
+
+Basic figures:
+- mitigation on x-axis
+- class transmission on y-axis
+- stratified by either test type or surveillance
+
+```{r}
+ggplot(merged_data, aes(x=mitigation, y=class, color=test_days)) +
+  geom_point() +
+  xlab("Mitigation") + 
+  ylab("Class")
+
+ggplot(merged_data, aes(x = mitigation, y = class, color = test_type)) +
+  stat_summary(fun = "mean", geom = "point") +
+  xlab("Mitigation") +
+  ylab("Average Class") +
+  labs(fill = "Test Type")
+
+```
+
+Create a new df: average value of class for each unique combo of mitigation level, test_type, surveillance
+```{r}
+df_surveil_facet <- merged_data %>%
+  mutate(mitigation_group = ifelse(mitigation %in% c(0.2, 0.35), "Low", 
+                           ifelse(mitigation == 0.5, "Middle", "High"))) %>%
+  mutate(mitigation_group = factor(mitigation_group, levels = c("Low", "Middle", "High"))) %>%
+  group_by(mitigation_group, Surveillance, test_type) %>%
+  summarize(average_class = mean(class)) %>%
+  ungroup()
+
+df_day_facet<- merged_data %>%
+  mutate(mitigation_group = ifelse(mitigation %in% c(0.2, 0.35), "Low", 
+                           ifelse(mitigation == 0.5, "Middle", "High"))) %>%
+  mutate(mitigation_group = factor(mitigation_group, levels = c("Low", "Middle", "High"))) %>%
+  group_by(mitigation_group, test_days, test_type) %>%
+  summarize(average_class = mean(class)) %>%
+  ungroup()
+```
+
+Now, plot this:
+
+```{r}
+
+ggplot(df_surveil_facet, aes(x = mitigation_group, y = average_class, group = test_type, color = test_type)) +
+  geom_line() +
+  facet_wrap(~ Surveillance) +
+  xlab("Mitigation") +
+  ylab("Average Class")
+
+ggplot(df_day_facet, aes(x = mitigation_group, y = average_class, group = test_type, color = test_type)) +
+  geom_line() +
+  facet_wrap(~ test_days) +
+  xlab("Mitigation") +
+  ylab("Average Class")
+
+
+```
+What about if we just show staff vs. all?
+```{r}
+df_surveil_facet_nostudents <- df_surveil_facet %>%
+  filter(test_type!="students")
+```
+
+```{r}
+library(ggrepel)
+
+# Add numbers to each plot
+df_numbers <- df_surveil_facet_nostudents %>%
+  group_by(Surveillance, test_type, mitigation_group) %>%
+  summarize(x = max(as.integer(mitigation_group)), y = max(average_class))
+
+ggplot(df_surveil_facet_nostudents, aes(x = mitigation_group, y = average_class, group = test_type, color = test_type, linetype = test_type)) +
+  geom_line(size = 1) +
+ #add text
+ geom_text_repel(
+    data = df_numbers,
+    aes(x = x, y = y, label = round(y, 2)),
+    size = 3,
+    nudge_x = -0.1,  # Adjust horizontal positioning of labels
+    segment.size =5,  # Increase the size of segments for repelling labels
+    direction = "y",  # Only repel labels vertically
+    segment.color = NA,  # Remove segment lines
+  ) +
+  #faceting and labels
+  facet_wrap(~ Surveillance, nrow = 1, strip.position = "top") +
+    labs(
+    title="Average classroom transmission by mitigation level, \nstratified by population tested and surveillance efforts",
+    x="Mitigation",
+    y="Average classroom transmission over 30 days"
+  ) +
+  #add themes and colors
+  scale_color_manual(values = c("black", "gray30")) +
+  scale_linetype_manual(values = c("dotted","solid")) +  # Different line types
+  ylim(0,9) +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+       strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(colour = "black"),
+        axis.title = element_text(colour = "black"),
+        plot.margin = margin(1, 1, 1, 1, "cm"),
+        plot.title = element_text(hjust = 0.5)) +
+  guides(
+    linetype = guide_legend(
+      override.aes = list(
+        color = "black",  # Set line color to black
+        shape = NA  # Remove shape legend
+      )))
+
+
+
+```
+
+
+
+With no facet: **This is currently Figure 1 on the abstract.**
+
+```{r}
+df_mitigation_testtype <- merged_data %>%
+  mutate(mitigation_group = ifelse(mitigation %in% c(0.2, 0.35), "Low", 
+                           ifelse(mitigation == 0.5, "Middle", "High"))) %>%
+  mutate(mitigation_group = factor(mitigation_group, levels = c("Low", "Middle", "High"))) %>%
+  group_by(mitigation_group, test_type) %>%
+  summarize(average_class = mean(class)) %>%
+  ungroup()
+```
+
+
+
+```{r}
+# Add numbers to each plot
+df_numbers <- df_mitigation_testtype %>%
+  group_by(test_type, mitigation_group) %>%
+  summarize(x = max(as.integer(mitigation_group)), y = max(average_class))
+
+ggplot(df_mitigation_testtype, aes(x = mitigation_group, y = average_class, group = test_type, color = test_type, linetype = test_type)) +
+  geom_line(size = 1) +
+ #add text
+ geom_text_repel(
+    data = df_numbers,
+    aes(x = x, y = y, label = round(y, 2)),
+    size = 3,
+    nudge_x = -0.1,  # Adjust horizontal positioning of labels
+    segment.size =5,  # Increase the size of segments for repelling labels
+    direction = "y",  # Only repel labels vertically
+    segment.color = NA,  # Remove segment lines
+  ) +
+  #labels
+    labs(
+    title="Average classroom transmission by mitigation level, \nstratified by population tested",
+    x="Mitigation",
+    y="Average classroom transmission over 30 days"
+  ) +
+  #add themes and colors
+  scale_color_manual(values = c("black", "gray30", "gray20")) +
+  scale_linetype_manual(values = c("dotted","solid", "dashed")) +  # Different line types
+  ylim(0,9) +
+  theme_bw() +
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+       strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(colour = "black"),
+        axis.title = element_text(colour = "black"),
+        plot.margin = margin(1, 1, 1, 1, "cm"),
+        plot.title = element_text(hjust = 0.5)) +
+  guides(
+    linetype = guide_legend(
+      override.aes = list(
+        color = "black",  # Set line color to black
+        shape = NA  # Remove shape legend
+      )))
+
+```
+
+Without averaging class: get stuck.
+
+```{r}
+
+df_surveil_facet <- merged_data %>%
+  mutate(mitigation_group = ifelse(mitigation %in% c(0.2, 0.35), "Low", 
+                                   ifelse(mitigation == 0.5, "Middle", "High"))) %>%
+  mutate(mitigation_group = factor(mitigation_group, levels = c("Low", "Middle", "High")))
+
+ggplot(df_surveil_facet, aes(x = mitigation_group, y = class, color = test_type)) +
+  geom_point() +
+  facet_wrap(~ surveillance) +
+  xlab("Mitigation") +
+  ylab("Class")
+
+```
